@@ -12,12 +12,14 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -27,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class CeFelloKVClusterTest {
     private static final String LOCALHOST_PREFIX = "http://localhost:";
     private static final String ENTITY_PREFIX = "/v0/entity?id=";
+    private static final int HTTP_OK_STATUS = 200;
     private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
 
     @TempDir
@@ -94,14 +97,10 @@ class CeFelloKVClusterTest {
 
         int successCount = 0;
         for (Integer port : ports) {
-            CeFelloFileSystemDao dao = new CeFelloFileSystemDao(tempDirectory.resolve(String.valueOf(port)));
-            try {
-                assertArrayEquals(value, dao.get(key));
+            Path keyPath = tempDirectory.resolve(String.valueOf(port)).resolve(encodeKey(key));
+            if (Files.exists(keyPath)) {
+                assertArrayEquals(value, Files.readAllBytes(keyPath));
                 successCount++;
-            } catch (NoSuchElementException ignored) {
-                // ignore missing values on non-owner nodes
-            } finally {
-                dao.close();
             }
         }
 
@@ -126,7 +125,7 @@ class CeFelloKVClusterTest {
             cluster.start(endpoint);
             try {
                 HttpResponse<byte[]> response = get(endpoint, key);
-                if (response.statusCode() == 200) {
+                if (response.statusCode() == HTTP_OK_STATUS) {
                     assertArrayEquals(value, response.body());
                     successCount++;
                 }
@@ -195,5 +194,11 @@ class CeFelloKVClusterTest {
         } catch (IOException e) {
             return false;
         }
+    }
+
+    private static String encodeKey(String key) {
+        return Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(key.getBytes(StandardCharsets.UTF_8));
     }
 }
